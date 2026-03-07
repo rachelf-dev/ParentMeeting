@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="../DataContext/DataContext.csproj" Id="58821f84-5a69-45db-8af6-75072c4b1502" />
+  <Project Path="../Repository/Repository.csproj" />
+  <Project Path="../Services/Service.csproj" Id="4b509aa6-c2b3-4764-9b4d-cc418a3be1ba" />
+  <Project Path="SchoolParentMeetingSystem.csproj" />
+</Solution>
