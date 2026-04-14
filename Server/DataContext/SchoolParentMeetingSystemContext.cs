@@ -50,6 +50,11 @@ namespace DataContext
                 entity.Property(e => e.Password)
                       .IsRequired();
 
+                entity.Property(e => e.Role)
+                      .HasMaxLength(20)
+                      .IsRequired()
+                      .HasDefaultValue("School");
+
                 entity.Property(e => e.MeetingDate)
                       .IsRequired();
 

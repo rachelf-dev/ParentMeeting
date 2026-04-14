@@ -17,7 +17,7 @@ namespace SchoolParentMeetingSystem.Service.Services
             services.AddAutoMapper(typeof(MapperProfile));
             services.AddDataLayer(connectionString);
             services.AddRepository();
-            services.AddScoped<IRegister<SchoolRegisterDto>, SchoolRegisterService>();
+            services.AddScoped<IRegister<SchoolRegisterDto, School>, SchoolRegisterService>();
             services.AddScoped<ILogin<SchoolLoginDto>, SchoolLoginService>();
             services.AddScoped<IToken<School>, TokenService>();
             services.AddScoped<ExcelImportService>();

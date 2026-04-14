@@ -3,11 +3,6 @@ using Repository.Entities;
 using Repository.Interfaces;
 using Service.Dto;
 using Service.Interfaces;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace Service.Services
 {
@@ -15,22 +10,28 @@ namespace Service.Services
     {
         private readonly IRepository<School> repository;
         private readonly IMapper mapper;
+
         public SchoolService(IRepository<School> repository, IMapper map)
         {
             this.repository = repository;
             this.mapper = map;
         }
-      
+
+        public async Task<List<SchoolDto>> GetBySchoolId(int schoolId)
+        {
+            var schools = (await repository.GetAll())
+                .Where(s => s.Id == schoolId)
+                .ToList();
+
+            return mapper.Map<List<SchoolDto>>(schools);
+        }
+
         public async Task<SchoolDto> AddItem(SchoolDto item)
         {
             var entity = mapper.Map<School>(item);
-
-            var savedSchool = await repository.AddItem(entity);
-
-            return mapper.Map<SchoolDto>(savedSchool);
+            var saved = await repository.AddItem(entity);
+            return mapper.Map<SchoolDto>(saved);
         }
-
-
 
         public async Task DeleteItem(int id)
         {
@@ -40,24 +41,19 @@ namespace Service.Services
         public async Task<List<SchoolDto>> GetAll()
         {
             var schools = await repository.GetAll();
-
             return mapper.Map<List<SchoolDto>>(schools);
-
         }
 
         public async Task<SchoolDto> GetById(int id)
         {
             var school = await repository.GetById(id);
-
             return mapper.Map<SchoolDto>(school);
         }
 
         public async Task<SchoolDto> UpdateItem(int id, SchoolDto item)
         {
             var entity = mapper.Map<School>(item);
-
             var result = await repository.UpdateItem(id, entity);
-
             return mapper.Map<SchoolDto>(result);
         }
     }

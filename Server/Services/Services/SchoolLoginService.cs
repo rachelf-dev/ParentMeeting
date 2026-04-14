@@ -22,11 +22,9 @@ namespace Service.Services
 
         public async Task<SchoolLoginDto> Login(SchoolLoginDto item)
         {
-            var allSchools = await repository.GetAll();
-
-            var school = allSchools.FirstOrDefault(s =>
-                s.Name == item.Name );
-
+            
+            var school = (await repository.GetAll())
+                .FirstOrDefault(s => s.Name == item.Name);
             if (school == null)
                 throw new Exception("Invalid name or password");
 

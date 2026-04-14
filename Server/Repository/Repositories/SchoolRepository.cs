@@ -59,6 +59,7 @@ namespace Repository.Repositories
             existingSchool.MeetingStartTime= item.MeetingStartTime;
             existingSchool.MeetingEndTime = item.MeetingEndTime;
             existingSchool.SlotDurationMinutes = item.SlotDurationMinutes;
+            existingSchool.Role = item.Role;
             
 
             await ctx.Save();

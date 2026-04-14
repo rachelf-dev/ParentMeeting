@@ -1,26 +1,37 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
 using Service.Dto;
 using Service.Interfaces;
 
 namespace SchoolParentMeetingSystem.Controllers
 {
+    [Authorize]
     [ApiController]
     [Route("api/[controller]")]
     public class ParentAvailabilityController(IService<ParentAvailabilityDto> service) : ControllerBase
     {
-
         private readonly IService<ParentAvailabilityDto> _service = service;
 
+        private int GetCurrentSchoolId()
+        {
+            var claim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier);
+            return claim != null ? int.Parse(claim.Value) : 0;
+        }
+
+        //  ADD
+        [Authorize(Roles = "Admin,School")]
         [HttpPost]
         public async Task<IActionResult> AddItem([FromBody] ParentAvailabilityDto parentAvailabilityDto)
         {
             try
             {
+                if (!ModelState.IsValid)
+                    return BadRequest(ModelState);
+
+                parentAvailabilityDto.SchoolId = GetCurrentSchoolId();
+
                 var result = await _service.AddItem(parentAvailabilityDto);
-                if (result == null)
-                {
-                    return NotFound();
-                }
+
                 return Ok(result);
             }
             catch (Exception ex)
@@ -29,13 +40,17 @@ namespace SchoolParentMeetingSystem.Controllers
             }
         }
 
+        // ✅ GET ALL
+        [Authorize(Roles = "Admin,School")]
         [HttpGet]
         public async Task<IActionResult> GetAll()
         {
             try
             {
-                var parentAvailability = await _service.GetAll();
-                return Ok(parentAvailability);
+                var schoolId = GetCurrentSchoolId();
+                var list = await _service.GetBySchoolId(schoolId);
+
+                return Ok(list);
             }
             catch (Exception ex)
             {
@@ -43,17 +58,22 @@ namespace SchoolParentMeetingSystem.Controllers
             }
         }
 
+        //  GET BY ID
+        [Authorize(Roles = "Admin,School")]
         [HttpGet("{id}")]
         public async Task<IActionResult> Get(int id)
         {
             try
             {
-                var parentAvailability = await _service.GetById(id);
-                if (parentAvailability == null)
-                {
+                var item = await _service.GetById(id);
+
+                if (item == null)
                     return NotFound();
-                }
-                return Ok(parentAvailability);
+
+                if (item.SchoolId != GetCurrentSchoolId() && !User.IsInRole("Admin"))
+                    return Forbid();
+
+                return Ok(item);
             }
             catch (Exception ex)
             {
@@ -61,12 +81,23 @@ namespace SchoolParentMeetingSystem.Controllers
             }
         }
 
+        // DELETE
+        [Authorize(Roles = "Admin,School")]
         [HttpDelete("{id}")]
         public async Task<IActionResult> Delete(int id)
         {
             try
             {
+                var item = await _service.GetById(id);
+
+                if (item == null)
+                    return NotFound();
+
+                if (item.SchoolId != GetCurrentSchoolId() && !User.IsInRole("Admin"))
+                    return Forbid();
+
                 await _service.DeleteItem(id);
+
                 return NoContent();
             }
             catch (Exception ex)
@@ -75,17 +106,26 @@ namespace SchoolParentMeetingSystem.Controllers
             }
         }
 
+        // UPDATE
+        [Authorize(Roles = "Admin,School")]
         [HttpPut("{id}")]
-        public async Task<IActionResult> Post([FromForm] ParentAvailabilityDto parentAvailability, int id)
+        public async Task<IActionResult> Update([FromBody] ParentAvailabilityDto parentAvailability, int id)
         {
             try
             {
-                var newParentAvailability = await _service.UpdateItem(id, parentAvailability);
-                if (newParentAvailability == null)
-                {
+                var existing = await _service.GetById(id);
+
+                if (existing == null)
                     return NotFound();
-                }
-                return Ok(newParentAvailability);
+
+                if (existing.SchoolId != GetCurrentSchoolId() && !User.IsInRole("Admin"))
+                    return Forbid();
+
+                parentAvailability.SchoolId = existing.SchoolId;
+
+                var result = await _service.UpdateItem(id, parentAvailability);
+
+                return Ok(result);
             }
             catch (Exception ex)
             {

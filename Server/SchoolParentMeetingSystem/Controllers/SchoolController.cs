@@ -11,70 +11,49 @@ namespace SchoolParentMeetingSystem.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
-    public class SchoolController(IRegister<SchoolRegisterDto> registerService, ILogin<SchoolLoginDto> loginSevice, IService<SchoolDto> service, ExcelImportService excelImportService, SchoolParentMeetingSystemContext context, IToken<School> tokenService) : ControllerBase
+    public class SchoolController(
+        IRegister<SchoolRegisterDto, School> registerService,
+        ILogin<SchoolLoginDto> loginSevice,
+        IService<SchoolDto> service,
+        ExcelImportService excelImportService,
+        SchoolParentMeetingSystemContext context) : ControllerBase
     {
-        private readonly IRegister<SchoolRegisterDto> _registerService = registerService;
+        private readonly IRegister<SchoolRegisterDto, School> _registerService = registerService;
         private readonly ILogin<SchoolLoginDto> _loginService = loginSevice;
         private readonly IService<SchoolDto> _service = service;
-        private readonly ExcelImportService _excelImportService = excelImportService ;
+        private readonly ExcelImportService _excelImportService = excelImportService;
         private readonly SchoolParentMeetingSystemContext _context = context;
-        private readonly IToken<School> _tokenService = tokenService;
-
 
         [HttpPost("register")]
-        public async Task<IActionResult> Register([FromBody] SchoolRegisterDto school)
+        public async Task<IActionResult> Register([FromBody] SchoolRegisterDto schoolDto)
         {
             try
             {
-                // בדיקה אם שם בית הספר כבר קיים
-                var existsName = await _context.Schools
-                    .AnyAsync(s => s.Name == school.Name);
+                var name = schoolDto.Name.Trim().ToLower();
 
-                if (existsName)
-                    return BadRequest("A school with this name already exists.");
+                var exists = await _context.Schools
+                    .AnyAsync(s => s.Name.ToLower() == name);
 
+                if (exists)
+                    return BadRequest("Name already exists");
 
-                var hashedPassword = BCrypt.Net.BCrypt.HashPassword(school.Password);
-                var existsPass = await _context.Schools
-                    .AnyAsync(s => s.Password == hashedPassword);
+                if (string.IsNullOrWhiteSpace(schoolDto.Password) || schoolDto.Password.Length < 6)
+                    return BadRequest("Password must be at least 6 characters");
 
-                var result = await _registerService.Register(school);
-                return Ok(result);
+                schoolDto.Name = name;
+
+                var result = await _registerService.Register(schoolDto);
+
+                return Ok(new { Message = "Success", SchoolId = result.Id });
             }
             catch (Exception ex)
             {
                 return BadRequest(ex.Message);
             }
         }
-        //לבדוק האם הסיסמא שונה
-        //[HttpPost("register")]
-        //public async Task<IActionResult> Register([FromBody] SchoolRegisterDto school)
-        //{
-        //    try
-        //    {
-        //        // בדיקה אם שם בית הספר כבר קיים
-        //        var existsName = await _context.Schools
-        //            .AnyAsync(s => s.Name == school.Name);
-
-        //        if (existsName)
-        //            return BadRequest("A school with this name already exists.");
-
-        //        // רישום בית הספר
-        //        var result = await _registerService.Register(school);
-
-        //        // יצירת טוקן
-        //        var token = _tokenService.GenerateToken(school);
-
-        //        return Ok(new { School = result, Token = token });
-        //    }
-        //    catch (Exception ex)
-        //    {
-        //        return BadRequest(ex.Message);
-        //    }
-        //}
 
         [HttpPost("login")]
-        public async Task<IActionResult> Login([FromForm] SchoolLoginDto loginDto)
+        public async Task<IActionResult> Login([FromBody] SchoolLoginDto loginDto)
         {
             try
             {
@@ -87,71 +66,41 @@ namespace SchoolParentMeetingSystem.Controllers
             }
         }
 
+        [Authorize(Roles = "Admin")]
         [HttpGet("getAllSchools")]
         public async Task<IActionResult> GetAll()
         {
-            try
-            {
-                var schools = await _service.GetAll();
-                return Ok(schools);
-            }
-            catch (Exception ex)
-            {
-                return BadRequest(ex.Message);
-            }
-
+            var schools = await _service.GetAll();
+            return Ok(schools);
         }
 
-        [HttpGet("getSchool")]
+        [Authorize(Roles = "Admin,School")]
+        [HttpGet("{id}")]
         public async Task<IActionResult> Get(int id)
         {
-            try
-            {
-                var school = await _service.GetById(id);
-
-                if (school == null)
-                    return NotFound();
-
-                return Ok(school);
-            }
-            catch (Exception ex)
-            {
-                return BadRequest(ex.Message);
-            }
+            var school = await _service.GetById(id);
+            if (school == null) return NotFound();
+            return Ok(school);
         }
 
-        [HttpDelete("deleteSchool/{id}")]
+        [Authorize(Roles = "Admin")]
+        [HttpDelete("{id}")]
         public async Task<IActionResult> Delete(int id)
         {
-            try
-            {
-                await _service.DeleteItem(id);
-                return NoContent();
-            }
-            catch (Exception ex)
-            {
-                return NotFound(ex.Message);
-            }
+            await _service.DeleteItem(id);
+            return NoContent();
         }
 
-        [HttpPut("update/{id}")]
+        [Authorize(Roles = "Admin")]
+        [HttpPut("{id}")]
         public async Task<IActionResult> Update(int id, SchoolDto school)
         {
-            try
-            {
-                var updatedSchool = await _service.UpdateItem(id, school);
-
-                if (updatedSchool == null)
-                    return NotFound();
-
-                return Ok(updatedSchool);
-            }
-            catch (Exception ex)
-            {
-                return BadRequest(ex.Message);
-            }
+            var updated = await _service.UpdateItem(id, school);
+            if (updated == null) return NotFound();
+            return Ok(updated);
         }
 
+        [Authorize(Roles = "Admin,School")]
         [HttpPost("import-excel")]
         public async Task<IActionResult> ImportExcel(int schoolId, IFormFile file)
         {
@@ -163,39 +112,5 @@ namespace SchoolParentMeetingSystem.Controllers
 
             return Ok("File imported successfully");
         }
-
-        //        [HttpPost("register")]
-        //public async Task<IActionResult> Register([FromBody] SchoolRegisterDto school)
-        //{
-        //    try
-        //    {
-        //        // בדיקה אם שם כבר קיים
-        //        var existsName = await _context.Schools
-        //            .AnyAsync(s => s.Name == school.Name);
-
-        //        if (existsName)
-        //            return BadRequest("A school with this name already exists.");
-
-        //        // יצירת hash לסיסמה
-        //        var hashedPassword = BCrypt.Net.BCrypt.HashPassword(school.Password);
-
-        //        // יצירת Entity חדש
-        //        var newSchool = new School
-        //        {
-        //            Name = school.Name,
-        //            Password = hashedPassword
-        //        };
-
-        //        _context.Schools.Add(newSchool);
-        //        await _context.SaveChangesAsync();
-
-        //        return Ok(newSchool);
-        //    }
-        //    catch (Exception ex)
-        //    {
-        //        return BadRequest(ex.Message);
-        //    }
-        //}
-
     }
 }

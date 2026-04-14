@@ -17,6 +17,7 @@ namespace Repository.Entities
 
         [Required]
         public string Password { get; set; } = string.Empty;
+        public string Role { get; set; } = "School";
 
         [Required]
         public DateTime MeetingDate { get; set; }

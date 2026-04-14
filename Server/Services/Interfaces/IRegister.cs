@@ -7,9 +7,8 @@ using System.Threading.Tasks;
 
 namespace Service.Interfaces
 {
-    public interface IRegister<T>
+    public interface IRegister<TInput, TOutput>
     {
-        public Task<T> Register(T item);
-
+        Task<TOutput> Register(TInput item);
     }
 }

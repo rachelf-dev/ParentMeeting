@@ -14,6 +14,15 @@ namespace Service.Services
             this.repository = repository;
             this.mapper = map;
         }
+
+        public async Task<List<ParentDto>> GetBySchoolId(int schoolId)
+        {
+            var parents = (await repository.GetAll())
+                .Where(t => t.SchoolId == schoolId)
+                .ToList();
+
+            return mapper.Map<List<ParentDto>>(parents);
+        }
         public async Task<ParentDto> AddItem(ParentDto item)
         {
             var parentEntity = mapper.Map<Parent>(item);

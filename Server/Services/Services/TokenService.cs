@@ -29,10 +29,10 @@ namespace Service.Services
             {
                 new Claim(ClaimTypes.NameIdentifier, item.Id.ToString()),
                 new Claim(ClaimTypes.Name, item.Name),
-                new Claim(ClaimTypes.Role, "School") 
+                new Claim(ClaimTypes.Role, item.Role)
             };
 
-  
+
             var tokenDescriptor = new SecurityTokenDescriptor
             {
                 Subject = new ClaimsIdentity(claims),

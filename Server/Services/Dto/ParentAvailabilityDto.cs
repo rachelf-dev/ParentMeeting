@@ -14,6 +14,7 @@ namespace Service.Dto
         public int ParentId { get; set; }
         
         public DateTime MeetingDate { get; set; }
+        public int SchoolId { get; set; }
 
         [Required]
         public TimeSpan StartTime { get; set; }

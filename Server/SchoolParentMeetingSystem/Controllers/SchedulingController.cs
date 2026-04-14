@@ -1,9 +1,11 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
 using Service.Scheduling;
 using System.Threading.Tasks;
 
 namespace SchoolParentMeetingSystem.Controllers
 {
+    [Authorize]
     [ApiController]
     [Route("api/[controller]")]
     public class SchedulingController : ControllerBase
@@ -15,12 +17,22 @@ namespace SchoolParentMeetingSystem.Controllers
             _schedulingService = schedulingService;
         }
 
-        [HttpPost("generate/{schoolId}")]
-        public async Task<IActionResult> Generate(int schoolId)
+        private int GetCurrentSchoolId()
+        {
+            var claim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier);
+            return claim != null ? int.Parse(claim.Value) : 0;
+        }
+
+        [Authorize(Roles = "Admin,School")]
+        [HttpPost("generate")]
+        public async Task<IActionResult> Generate()
         {
             try
             {
+                var schoolId = GetCurrentSchoolId();
+
                 var result = await _schedulingService.ProcessSchedulingAsync(schoolId);
+
                 return Ok(new
                 {
                     Message = "השיבוץ הסתיים בהצלחה",

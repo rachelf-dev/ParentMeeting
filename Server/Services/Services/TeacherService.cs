@@ -1,4 +1,6 @@
 ﻿using AutoMapper;
+using DataContext;
+using Microsoft.EntityFrameworkCore;
 using Repository.Entities;
 using Repository.Interfaces;
 using Service.Dto;
@@ -19,8 +21,17 @@ namespace Service.Services
         {
             this.repository = repository;
             this.mapper = map;
+            
         }
 
+        public async Task<List<TeacherDto>> GetBySchoolId(int schoolId)
+        {
+            var teachers = (await repository.GetAll())
+                .Where(t => t.SchoolId == schoolId)
+                .ToList();
+
+            return mapper.Map<List<TeacherDto>>(teachers);
+        }
         public async Task<TeacherDto> AddItem(TeacherDto item)
         {
             var entity = mapper.Map<Teacher>(item);
@@ -33,6 +44,11 @@ namespace Service.Services
 
         public async Task DeleteItem(int id)
         {
+            var teacher = await repository.GetById(id);
+
+            if (teacher == null)
+                throw new Exception("Not found");
+
             await repository.DeleteItem(id);
         }
 
@@ -58,5 +74,6 @@ namespace Service.Services
 
             return mapper.Map<TeacherDto>(result);
         }
+
     }
 }

@@ -3,15 +3,10 @@ using Repository.Entities;
 using Repository.Interfaces;
 using Service.Dto;
 using Service.Interfaces;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace Service.Services
 {
-    public class SchoolRegisterService : IRegister<SchoolRegisterDto>
+    public class SchoolRegisterService : IRegister<SchoolRegisterDto, School>
     {
         private readonly IRepository<School> repository;
         private readonly IMapper mapper;
@@ -22,17 +17,17 @@ namespace Service.Services
             this.mapper = mapper;
         }
 
-        public async Task<SchoolRegisterDto> Register(SchoolRegisterDto item)
+        public async Task<School> Register(SchoolRegisterDto item)
         {
             var entity = mapper.Map<School>(item);
 
+            entity.Name = item.Name.Trim().ToLower();
             entity.Password = BCrypt.Net.BCrypt.HashPassword(item.Password);
+            entity.Role = "School";
 
             var savedSchool = await repository.AddItem(entity);
 
-            return mapper.Map<SchoolRegisterDto>(savedSchool);
+            return savedSchool;
         }
-
     }
-
 }

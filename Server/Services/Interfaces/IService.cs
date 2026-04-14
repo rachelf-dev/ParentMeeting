@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Service.Dto;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -13,5 +14,6 @@ namespace Service.Interfaces
         Task<T> AddItem(T item);
         Task<T> UpdateItem(int id, T item);
         Task DeleteItem(int id);
+        Task<List<T>> GetBySchoolId(int schoolId);
     }
 }
