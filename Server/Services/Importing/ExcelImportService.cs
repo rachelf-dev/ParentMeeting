@@ -2,19 +2,19 @@
 using OfficeOpenXml;
 using Repository;
 using Repository.Entities;
-
+using Microsoft.EntityFrameworkCore;
 
 namespace Service.Importing
 {
     public class ExcelImportService
     {
-
         private readonly SchoolParentMeetingSystemContext _context;
 
         public ExcelImportService(SchoolParentMeetingSystemContext context)
         {
             _context = context;
         }
+
         public async Task ImportFromExcel(Stream fileStream, int schoolId)
         {
             ExcelPackage.LicenseContext = OfficeOpenXml.LicenseContext.NonCommercial;
@@ -27,15 +27,24 @@ namespace Service.Importing
             var worksheet = package.Workbook.Worksheets[0];
             int rowCount = worksheet.Dimension.Rows;
 
-            // ניקוי נתונים קיימים עבור בית הספר הספציפי
+            // --- 1. ניקוי נתונים קיימים (מחיקת הכל כדי להתחיל דף חדש) ---
+
+            // מוחקים קודם תלמידים (כי הם תלויים בהורים ומורים)
             var studentsToRemove = _context.Students.Where(s => s.SchoolId == schoolId);
             _context.Students.RemoveRange(studentsToRemove);
 
+            // מוחקים מורים
             var teachersToRemove = _context.Teachers.Where(t => t.SchoolId == schoolId);
             _context.Teachers.RemoveRange(teachersToRemove);
 
+            // מוחקים הורים (כדי למנוע שגיאת Email/Identity כפול)
+            var parentsToRemove = _context.Parents.Where(p => p.SchoolId == schoolId);
+            _context.Parents.RemoveRange(parentsToRemove);
+
+            // שמירה זמנית של המחיקה
             await _context.SaveChangesAsync();
 
+            // --- 2. הכנה לייבוא החדש ---
             var parentsDict = new Dictionary<string, Parent>();
             var teachersDict = new Dictionary<string, Teacher>();
 
@@ -50,7 +59,11 @@ namespace Service.Importing
                 var parentName = worksheet.Cells[row, 7].Text.Trim();
                 var parentEmail = worksheet.Cells[row, 8].Text.Trim();
 
-                // --- טיפול בהורה ---
+                // דילוג על שורות ריקות בטעות
+                if (string.IsNullOrEmpty(studentIdentity) || string.IsNullOrEmpty(parentEmail))
+                    continue;
+
+                // --- טיפול בהורה (מניעת כפילות באותו קובץ) ---
                 if (!parentsDict.TryGetValue(parentIdentity, out var parent))
                 {
                     parent = new Parent
@@ -58,14 +71,14 @@ namespace Service.Importing
                         ParentIdentity = parentIdentity,
                         ParentName = parentName,
                         ParentEmail = parentEmail,
-                        SchoolId = schoolId 
+                        SchoolId = schoolId
                     };
 
                     _context.Parents.Add(parent);
                     parentsDict[parentIdentity] = parent;
                 }
 
-                // --- טיפול במורה ---
+                // --- טיפול במורה (לפי כיתה) ---
                 if (!teachersDict.TryGetValue(className, out var teacher))
                 {
                     teacher = new Teacher
@@ -86,8 +99,8 @@ namespace Service.Importing
                     FirstName = firstName,
                     LastName = lastName,
                     ClassName = className,
-                    Parent = parent,
-                    Teacher = teacher,
+                    Parent = parent, 
+                    Teacher = teacher,  
                     SchoolId = schoolId
                 };
 
