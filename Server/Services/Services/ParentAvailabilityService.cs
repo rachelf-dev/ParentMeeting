@@ -10,6 +10,7 @@ namespace Service.Services
     {
         private readonly IRepository<ParentAvailability> repository;
         private readonly IMapper mapper;
+
         public ParentAvailabilityService(IRepository<ParentAvailability> repository, IMapper map)
         {
             this.repository = repository;
@@ -24,6 +25,7 @@ namespace Service.Services
 
             return mapper.Map<List<ParentAvailabilityDto>>(parentsAvailability);
         }
+
         public async Task<ParentAvailabilityDto> AddItem(ParentAvailabilityDto item)
         {
             var entity = mapper.Map<ParentAvailability>(item);
@@ -32,7 +34,6 @@ namespace Service.Services
 
             return mapper.Map<ParentAvailabilityDto>(savedEntity);
         }
-
 
         public async Task DeleteItem(int id)
         {
@@ -45,7 +46,6 @@ namespace Service.Services
 
             return mapper.Map<List<ParentAvailabilityDto>>(entities);
         }
-
 
         public async Task<ParentAvailabilityDto> GetById(int id)
         {

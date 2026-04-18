@@ -43,88 +43,48 @@ namespace Service.Scheduling
             var parentConstraints = await _context.ParentAvailability
                 .Include(pa => pa.Parent)
                 .AsNoTracking()
-                .Where(pa => pa.Parent.SchoolId == schoolId && pa.IsAvailable == false)
+                .Where(pa => pa.Parent.SchoolId == schoolId)
                 .ToListAsync();
 
-            // 2. הכנת תשתיות לשיבוץ
+            // 2. הכנת תשתיות
             var timeSlots = GenerateTimeSlots(school);
             var slotDuration = school.SlotDurationMinutes;
-
-            var teacherBusySlots = teachers
-                .ToDictionary(t => t.Id, t => new HashSet<TimeSpan>());
-
-            var parentBlockedSlots = parentConstraints
-                .GroupBy(pc => pc.ParentId)
-                .ToDictionary(g => g.Key, g => g.ToList());
+            var teacherBusySlots = teachers.ToDictionary(t => t.Id, t => new HashSet<TimeSpan>());
+            var parentAvailabilityDict = parentConstraints.GroupBy(pc => pc.ParentId).ToDictionary(g => g.Key, g => g.ToList());
 
             var allMeetingsDto = new List<ParentMeetingDto>();
 
-            // מיון הורים לפי כמות ילדים (המורכבים ביותר קודם)
+            // מיון הורים לפי מורכבות (יותר ילדים קודם)
             var parentGroups = students
                 .Where(s => s.TeacherId != null)
                 .GroupBy(s => s.ParentId)
                 .OrderByDescending(g => g.Count())
                 .ToList();
 
-            // 3. אלגוריתם שיבוץ מבוסס "חלון זמן משפחתי"
+            // 3. אלגוריתם שיבוץ עם מנגנון הבטחת שיבוץ (Fallback)
             foreach (var group in parentGroups)
             {
                 var parentId = group.Key;
                 var parentStudents = group.ToList();
+                List<TimeSpan> finalSlots = null;
 
-                List<TimeSpan> bestFamilySlots = null;
-                double minFamilyPenalty = double.MaxValue;
+                // ניסיון 1: שיבוץ מושלם (מכבד True ומכבד False)
+                finalSlots = FindBestSlotsForFamily(parentId, parentStudents, timeSlots, teacherBusySlots, parentAvailabilityDict, slotDuration, true, true);
 
-                // ננסה כל סלוט אפשרי כנקודת התחלה פוטנציאלית עבור המשפחה
-                foreach (var startTime in timeSlots)
-                {
-                    var currentTrialSlots = new List<TimeSpan>();
-                    bool canScheduleAll = true;
+                // ניסיון 2: אם נכשל - מוותרים על ה-TRUE (השעות המועדפות) אך עדיין נמנעים מה-FALSE (השעות החסומות)
+                if (finalSlots == null)
+                    finalSlots = FindBestSlotsForFamily(parentId, parentStudents, timeSlots, teacherBusySlots, parentAvailabilityDict, slotDuration, false, true);
 
-                    foreach (var student in parentStudents)
-                    {
-                        // מחפשים עבור הילד הנוכחי את הסלוט הפנוי הכי קרוב ל-startTime
-                        // (חייב להיות פנוי גם למורה וגם להורה)
-                        var availableSlot = timeSlots
-                            .Where(s => s >= startTime)
-                            .Where(s => !teacherBusySlots[student.TeacherId.Value].Contains(s))
-                            .Where(s => !currentTrialSlots.Contains(s)) // שההורה לא בשתי פגישות במקביל
-                            .Where(s => !IsParentBlocked(parentId, s, parentBlockedSlots, slotDuration))
-                            .OrderBy(s => s)
-                            .FirstOrDefault();
+                // ניסיון 3: מוצא אחרון - מוותרים על כל אילוצי ההורה כדי להבטיח שיבוץ לתלמיד
+                if (finalSlots == null)
+                    finalSlots = FindBestSlotsForFamily(parentId, parentStudents, timeSlots, teacherBusySlots, parentAvailabilityDict, slotDuration, false, false);
 
-                        if (availableSlot == default && startTime != timeSlots.Last())
-                        {
-                            canScheduleAll = false;
-                            break;
-                        }
-
-                        currentTrialSlots.Add(availableSlot);
-                    }
-
-                    if (canScheduleAll && currentTrialSlots.All(s => s != default))
-                    {
-                        // חישוב "קנס" המשפחה: ההפרש בדקות בין הפגישה הראשונה לאחרונה
-                        var totalTimeGap = (currentTrialSlots.Max() - currentTrialSlots.Min()).TotalMinutes;
-
-                        if (totalTimeGap < minFamilyPenalty)
-                        {
-                            minFamilyPenalty = totalTimeGap;
-                            bestFamilySlots = new List<TimeSpan>(currentTrialSlots);
-                        }
-
-                        // אם מצאנו רצף מושלם (ללא חורים), נשתמש בו ונעבור למשפחה הבאה
-                        if (totalTimeGap == (parentStudents.Count - 1) * slotDuration)
-                            break;
-                    }
-                }
-
-                // ביצוע השיבוץ הסופי עבור המשפחה
-                if (bestFamilySlots != null)
+                // ביצוע השיבוץ בפועל
+                if (finalSlots != null)
                 {
                     for (int i = 0; i < parentStudents.Count; i++)
                     {
-                        var slot = bestFamilySlots[i];
+                        var slot = finalSlots[i];
                         var student = parentStudents[i];
 
                         allMeetingsDto.Add(CreateDto(school, student, slot));
@@ -135,18 +95,76 @@ namespace Service.Scheduling
 
             // 4. שמירה במסד נתונים
             await SaveToDatabaseAsync(schoolId, allMeetingsDto);
-
             return allMeetingsDto;
         }
 
-        private bool IsParentBlocked(int parentId, TimeSpan slot, Dictionary<int, List<ParentAvailability>> blockedDict, int duration)
+        private List<TimeSpan> FindBestSlotsForFamily(int parentId, List<Student> students, List<TimeSpan> allSlots, Dictionary<int, HashSet<TimeSpan>> teacherBusy, Dictionary<int, List<ParentAvailability>> availDict, int duration, bool usePositive, bool useNegative)
         {
-            if (!blockedDict.ContainsKey(parentId)) return false;
+            List<TimeSpan> bestMatch = null;
+            double minGap = double.MaxValue;
 
+            // סורקים כל נקודת התחלה אפשרית כדי למצוא את הרצף הכי צפוף (מינימום חורים)
+            foreach (var startTime in allSlots)
+            {
+                var trialSlots = new List<TimeSpan>();
+                bool canFitAll = true;
+
+                foreach (var student in students)
+                {
+                    var slot = allSlots
+                        .Where(s => s >= startTime)
+                        .Where(s => !teacherBusy[student.TeacherId.Value].Contains(s))
+                        .Where(s => !trialSlots.Contains(s))
+                        .Where(s => IsSlotAllowed(parentId, s, availDict, duration, usePositive, useNegative))
+                        .OrderBy(s => s)
+                        .FirstOrDefault();
+
+                    if (slot == default) { canFitAll = false; break; }
+                    trialSlots.Add(slot);
+                }
+
+                if (canFitAll)
+                {
+                    var currentGap = (trialSlots.Max() - trialSlots.Min()).TotalMinutes;
+                    if (currentGap < minGap)
+                    {
+                        minGap = currentGap;
+                        bestMatch = new List<TimeSpan>(trialSlots);
+                    }
+                    // אם מצאנו רצף מושלם ללא חורים, נצא מהלופ
+                    if (currentGap == (students.Count - 1) * duration) break;
+                }
+            }
+            return bestMatch;
+        }
+
+        private bool IsSlotAllowed(int parentId, TimeSpan slot, Dictionary<int, List<ParentAvailability>> dict, int duration, bool usePositive, bool useNegative)
+        {
+            if (!dict.ContainsKey(parentId)) return true;
+
+            var constraints = dict[parentId];
             var endOfSlot = slot.Add(TimeSpan.FromMinutes(duration));
-            return blockedDict[parentId].Any(c =>
-                (slot >= c.StartTime && slot < c.EndTime) ||
-                (endOfSlot > c.StartTime && endOfSlot <= c.EndTime));
+
+            // בדיקת אילוצים שליליים (False) - "אני לא יכול בשעות האלו"
+            if (useNegative)
+            {
+                bool isBlocked = constraints.Any(c => !c.IsAvailable &&
+                    ((slot >= c.StartTime && slot < c.EndTime) || (endOfSlot > c.StartTime && endOfSlot <= c.EndTime)));
+                if (isBlocked) return false;
+            }
+
+            // בדיקת אילוצים חיוביים (True) - "אני יכול רק בשעות האלו"
+            if (usePositive)
+            {
+                var positiveConstraints = constraints.Where(c => c.IsAvailable).ToList();
+                if (positiveConstraints.Any())
+                {
+                    bool isInAllowedRange = positiveConstraints.Any(c => slot >= c.StartTime && endOfSlot <= c.EndTime);
+                    if (!isInAllowedRange) return false;
+                }
+            }
+
+            return true;
         }
 
         private List<TimeSpan> GenerateTimeSlots(School school)

@@ -18,7 +18,7 @@ namespace SchoolParentMeetingSystem.Controllers
             return claim != null ? int.Parse(claim.Value) : 0;
         }
 
-        //  ADD
+        // ADD
         [Authorize(Roles = "Admin,School")]
         [HttpPost]
         public async Task<IActionResult> AddItem([FromBody] ParentAvailabilityDto parentAvailabilityDto)
@@ -40,7 +40,7 @@ namespace SchoolParentMeetingSystem.Controllers
             }
         }
 
-        // ✅ GET ALL
+        // GET ALL
         [Authorize(Roles = "Admin,School")]
         [HttpGet]
         public async Task<IActionResult> GetAll()
@@ -58,7 +58,7 @@ namespace SchoolParentMeetingSystem.Controllers
             }
         }
 
-        //  GET BY ID
+        // GET BY ID
         [Authorize(Roles = "Admin,School")]
         [HttpGet("{id}")]
         public async Task<IActionResult> Get(int id)
