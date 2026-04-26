@@ -28,6 +28,13 @@ namespace Service.Importing
             int rowCount = worksheet.Dimension.Rows;
 
             // --- 1. ניקוי נתונים קיימים (מחיקת הכל כדי להתחיל דף חדש) ---
+            // מחיקת פגישות קיימות
+            var meetingsToRemove = _context.ParentMeetings.Where(m => m.SchoolId == schoolId);
+            _context.ParentMeetings.RemoveRange(meetingsToRemove);
+
+            //// מחיקת אילוצי הורים (Availability)
+            //var constraintsToRemove = _context.ParentAvailability.Where(pa => pa.Parent.SchoolId == schoolId);
+            //_context.ParentAvailability.RemoveRange(constraintsToRemove);
 
             // מוחקים קודם תלמידים (כי הם תלויים בהורים ומורים)
             var studentsToRemove = _context.Students.Where(s => s.SchoolId == schoolId);

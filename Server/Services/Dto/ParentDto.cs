@@ -9,6 +9,7 @@ namespace Service.Dto
 {
     public class ParentDto
     {
+        public int Id { get; set; }
         [Required]
         [StringLength(12,MinimumLength = 7)]
         public string ParentIdentity { get; set; }

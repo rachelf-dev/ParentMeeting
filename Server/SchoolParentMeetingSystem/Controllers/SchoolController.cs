@@ -100,17 +100,27 @@ namespace SchoolParentMeetingSystem.Controllers
             return Ok(updated);
         }
 
-        [Authorize(Roles = "Admin,School")]
+        [Authorize]
         [HttpPost("import-excel")]
-        public async Task<IActionResult> ImportExcel(int schoolId, IFormFile file)
+        public async Task<IActionResult> ImportExcel(IFormFile file)
         {
             if (file == null || file.Length == 0)
-                return BadRequest("No file uploaded");
+                return BadRequest("לא נבחר קובץ");
+
+            // שליפת ה-ID לפי ה-Claim שהגדרת ב-TokenService
+            var schoolIdClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+
+            if (string.IsNullOrEmpty(schoolIdClaim))
+            {
+                return Unauthorized("מזהה בית הספר לא נמצא בטוקן");
+            }
+
+            int schoolId = int.Parse(schoolIdClaim);
 
             using var stream = file.OpenReadStream();
             await _excelImportService.ImportFromExcel(stream, schoolId);
 
-            return Ok("File imported successfully");
+            return Ok("הקובץ יובא בהצלחה");
         }
     }
 }
