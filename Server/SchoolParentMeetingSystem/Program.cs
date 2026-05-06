@@ -1,7 +1,8 @@
-using SchoolParentMeetingSystem.Service.Services;
 using DataContext;
 using Microsoft.EntityFrameworkCore;
 using SchoolParentMeetingSystem.Extensions;
+using SchoolParentMeetingSystem.Service.Services;
+using System.Text.Json;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -26,7 +27,11 @@ builder.Services.AddDbContext<SchoolParentMeetingSystemContext>(options =>
 builder.Services.AddServices(connectionString);
 builder.Services.AddIdentityServices(builder.Configuration);
 
-builder.Services.AddControllers();
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+    {
+        options.JsonSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
+    });
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(); // הוספת Swagger
 

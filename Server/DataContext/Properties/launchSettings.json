@@ -3,7 +3,7 @@
     "DataContext": {
       "commandName": "Project"
     },
-    "Profile 1": {
+    "http": {
       "commandName": "Executable"
     }
   }

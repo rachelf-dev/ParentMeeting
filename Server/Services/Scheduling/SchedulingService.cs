@@ -214,7 +214,6 @@ namespace Service.Scheduling
                 EndTime = d.EndTime,
                 IsPast = false
             }).ToList();
-
             await _context.ParentMeetings.AddRangeAsync(entities);
             await _context.SaveChangesAsync();
         }

@@ -10,18 +10,17 @@ namespace Service.Dto
 {
     public class ParentAvailabilityDto
     {
-        [Required]
         public int ParentId { get; set; }
+        public string? ParentIdentity { get; set; }
+
         
         public DateTime MeetingDate { get; set; }
         public int SchoolId { get; set; }
 
-        [Required]
+
         public TimeSpan StartTime { get; set; }
-        [Required]
         public TimeSpan EndTime { get; set; }
 
-        [Required]
         public bool IsAvailable { get; set; } = true;
     }
 }

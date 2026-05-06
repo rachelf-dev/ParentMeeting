@@ -15,7 +15,7 @@ namespace Repository.Entities
 
         [Required]
         [ForeignKey("Parent")]
-        public int ParentId { get; set; }
+        public int? ParentId { get; set; }
         public Parent Parent { get; set; }
 
         [Required]

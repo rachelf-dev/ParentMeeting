@@ -122,5 +122,46 @@ namespace SchoolParentMeetingSystem.Controllers
 
             return Ok("הקובץ יובא בהצלחה");
         }
+
+        [Authorize(Roles = "Admin,School")]
+        [HttpPost("setup-meeting")]
+        public async Task<IActionResult> SetupMeeting([FromBody] MeetingSetupDto model)
+        {
+            var schoolIdClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+            if (string.IsNullOrEmpty(schoolIdClaim)) return Unauthorized();
+
+            var school = await _context.Schools.FindAsync(int.Parse(schoolIdClaim));
+            if (school == null) return NotFound();
+
+            school.MeetingDate = model.Date;
+            school.MeetingStartTime = model.StartTime;
+            school.MeetingEndTime = model.EndTime;
+            school.SlotDurationMinutes = model.Duration;
+
+            await _context.SaveChangesAsync();
+            return Ok(new { message = "הנתונים עודכנו בהצלחה" });
+        }
+        [Authorize(Roles = "Admin,School")]
+        [HttpGet("status")]
+        public async Task<IActionResult> GetStatus()
+        {
+            // שליפת ה-ID של בית הספר מהטוקן
+            var schoolIdClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+            if (string.IsNullOrEmpty(schoolIdClaim)) return Unauthorized();
+            int schoolId = int.Parse(schoolIdClaim);
+
+            // 1. ספירת תלמידים
+            var studentCount = await _context.Students
+                .CountAsync(s => s.SchoolId == schoolId);
+
+            var hasSchedule = await _context.ParentMeetings
+                .AnyAsync(a => a.SchoolId == schoolId);
+
+            return Ok(new SchoolStatusDto
+            {
+                StudentCount = studentCount,
+                IsScheduleGenerated = hasSchedule
+            });
+        }
     }
 }

@@ -19,6 +19,7 @@ namespace Service.Services
 
         public async Task<List<ParentAvailabilityDto>> GetBySchoolId(int schoolId)
         {
+            // שליפת הנתונים וביצוע הסינון לפני ה-ToList
             var parentsAvailability = (await repository.GetAll())
                 .Where(t => t.SchoolId == schoolId)
                 .ToList();

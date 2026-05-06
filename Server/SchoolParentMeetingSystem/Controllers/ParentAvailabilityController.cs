@@ -35,33 +35,28 @@ namespace SchoolParentMeetingSystem.Controllers
         {
             try
             {
-                if (!ModelState.IsValid)
-                    return BadRequest(ModelState);
+                if (!ModelState.IsValid) return BadRequest(ModelState);
 
-                // 1. הגדרת מזהה בית הספר מהטוקן
-                parentAvailabilityDto.SchoolId = GetCurrentSchoolId();
+                // 1. קבלת מזהה בית הספר מהטוקן
+                int currentSchoolId = GetCurrentSchoolId();
+                if (currentSchoolId == 0) return Unauthorized("לא נמצא מזהה בית ספר בטוקן.");
 
-                // 2. תרגום תעודת זהות ל-ID פנימי
-                // אנחנו שולפים את כל ההורים ומחפשים את זה עם תעודת הזהות התואמת
-                var allParents = await _parentService.GetAll();
-                var parent = allParents.FirstOrDefault(p => p.ParentIdentity == parentAvailabilityDto.ParentId.ToString());
+                parentAvailabilityDto.SchoolId = currentSchoolId;
 
-                if (parent == null)
-                {
-                    return BadRequest("שגיאה: תעודת זהות זו לא קיימת במערכת. יש להעלות את ההורה באקסל תחילה.");
-                }
+                // 2. ויתור על חיפוש ההורה/יצירתו
+                // אנחנו פשוט שומרים את ה-ParentId כפי שהגיע מה-Frontend (שהוא הת"ז)
+                // שים לב: זה יעבוד רק אם השדה ParentId במסד הנתונים הוא מסוג שיכול להכיל ת"ז 
+                // ואם אין עליו Constraint של מפתח זר שמחייב קיום בטבלת Parents.
 
-                // 3. עדכון ה-DTO ב-ID האמיתי (המפתח הזר)
-                parentAvailabilityDto.ParentId = parent.Id;
-
-                // 4. שמירה למסד הנתונים
+                // 3. שמירת האילוץ ישירות
                 var result = await _service.AddItem(parentAvailabilityDto);
+
                 return Ok(result);
             }
             catch (Exception ex)
             {
-                // במקרה של שגיאת SQL פנימית (כמו כפילות), נקבל הודעה ברורה
-                return BadRequest(ex.InnerException?.Message ?? ex.Message);
+                // אם מופיעה כאן שגיאת SQL על Foreign Key, סימן שצריך לבטל את הקישור במסד הנתונים
+                return BadRequest("שגיאה בשמירה: וודא שהמערכת מאפשרת הזנת תעודת זהות ללא שיוך להורה קיים. " + (ex.InnerException?.Message ?? ex.Message));
             }
         }
 
@@ -71,11 +66,19 @@ namespace SchoolParentMeetingSystem.Controllers
         {
             try
             {
-                var schoolId = GetCurrentSchoolId();
+                var schoolId = GetCurrentSchoolId(); 
+                if (schoolId <= 0)
+                {
+                    return Unauthorized("מזהה בית ספר לא נמצא");
+                }
+
                 var list = await _service.GetBySchoolId(schoolId);
                 return Ok(list);
             }
-            catch (Exception ex) { return BadRequest(ex.Message); }
+            catch (Exception ex)
+            {
+                return BadRequest(ex.Message);
+            }
         }
 
         [Authorize(Roles = "Admin,School")]

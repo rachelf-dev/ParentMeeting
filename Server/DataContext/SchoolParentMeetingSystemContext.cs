@@ -210,9 +210,10 @@ namespace DataContext
                       .IsRequired();
 
                 entity.HasOne(e => e.Parent)
-                      .WithMany(p => p.ParentAvailability)
-                      .HasForeignKey(e => e.ParentId)
-                      .OnDelete(DeleteBehavior.Cascade);
+                       .WithMany(p => p.ParentAvailability)
+                       .HasForeignKey(e => e.ParentId)
+                       .IsRequired(false) // מאפשר לשמור אילוץ גם בלי מזהה הורה קיים
+                       .OnDelete(DeleteBehavior.SetNull); // אם הורה נמחק, האילוץ נשאר עם NULL
             });
 
             // ParentMeeting
