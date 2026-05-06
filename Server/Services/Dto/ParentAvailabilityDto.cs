@@ -10,8 +10,8 @@ namespace Service.Dto
 {
     public class ParentAvailabilityDto
     {
-        public int ParentId { get; set; }
-        public string? ParentIdentity { get; set; }
+        public int? ParentId { get; set; }
+        public string ParentIdentity { get; set; }
 
         
         public DateTime MeetingDate { get; set; }

@@ -27,8 +27,7 @@ namespace Service.Scheduling
                 .AsNoTracking()
                 .FirstOrDefaultAsync(s => s.Id == schoolId);
 
-            if (school == null)
-                throw new Exception("בית הספר לא נמצא.");
+            if (school == null) throw new Exception("בית הספר לא נמצא.");
 
             var students = await _context.Students
                 .AsNoTracking()
@@ -40,52 +39,67 @@ namespace Service.Scheduling
                 .Where(t => t.SchoolId == schoolId)
                 .ToListAsync();
 
-            var parentConstraints = await _context.ParentAvailability
-                .Include(pa => pa.Parent)
+            // שליפת כל ההורים הקיימים בבית הספר לצורך בדיקת קיום
+            var existingParentIdentities = await _context.Parents
+                .Where(p => p.SchoolId == schoolId)
+                .Select(p => p.ParentIdentity)
                 .AsNoTracking()
-                .Where(pa => pa.Parent.SchoolId == schoolId)
                 .ToListAsync();
 
-            // 2. הכנת תשתיות
+            var parentConstraints = await _context.ParentAvailability
+                .AsNoTracking()
+                .Where(pa => pa.SchoolId == schoolId)
+                .ToListAsync();
+
+            // 2. הכנת תשתיות - קיבוץ לפי תעודת זהות (string)
             var timeSlots = GenerateTimeSlots(school);
             var slotDuration = school.SlotDurationMinutes;
             var teacherBusySlots = teachers.ToDictionary(t => t.Id, t => new HashSet<TimeSpan>());
-            var parentAvailabilityDict = parentConstraints.GroupBy(pc => pc.ParentId).ToDictionary(g => g.Key, g => g.ToList());
+
+            var parentAvailabilityDict = parentConstraints
+                .GroupBy(pc => pc.ParentIdentity)
+                .ToDictionary(g => g.Key, g => g.ToList());
 
             var allMeetingsDto = new List<ParentMeetingDto>();
 
-            // מיון הורים לפי מורכבות (יותר ילדים קודם)
+            // מיון קבוצות לפי הורה
             var parentGroups = students
                 .Where(s => s.TeacherId != null)
-                .GroupBy(s => s.ParentId)
+                .GroupBy(s => s.ParentId.ToString()) // קיבוץ לפי ה-Identity שנמצא ב-Student
                 .OrderByDescending(g => g.Count())
                 .ToList();
 
-            // 3. אלגוריתם שיבוץ עם מנגנון הבטחת שיבוץ (Fallback)
+            // 3. אלגוריתם שיבוץ
             foreach (var group in parentGroups)
             {
-                var parentId = group.Key;
+                var parentIdentity = group.Key;
                 var parentStudents = group.ToList();
                 List<TimeSpan> finalSlots = null;
 
-                // ניסיון 1: שיבוץ מושלם (מכבד True ומכבד False)
-                finalSlots = FindBestSlotsForFamily(parentId, parentStudents, timeSlots, teacherBusySlots, parentAvailabilityDict, slotDuration, true, true);
+                // בדיקה: האם ההורה בכלל קיים במערכת?
+                bool parentExists = existingParentIdentities.Contains(parentIdentity);
 
-                // ניסיון 2: אם נכשל - מוותרים על ה-TRUE (השעות המועדפות) אך עדיין נמנעים מה-FALSE (השעות החסומות)
-                if (finalSlots == null)
-                    finalSlots = FindBestSlotsForFamily(parentId, parentStudents, timeSlots, teacherBusySlots, parentAvailabilityDict, slotDuration, false, true);
+                if (parentExists)
+                {
+                    // ניסיון 1: שיבוץ עם כל האילוצים
+                    finalSlots = FindBestSlotsForFamily(parentIdentity, parentStudents, timeSlots, teacherBusySlots, parentAvailabilityDict, slotDuration, true, true);
 
-                // ניסיון 3: מוצא אחרון - מוותרים על כל אילוצי ההורה כדי להבטיח שיבוץ לתלמיד
+                    // ניסיון 2: ויתור על שעות מועדפות (Positive)
+                    if (finalSlots == null)
+                        finalSlots = FindBestSlotsForFamily(parentIdentity, parentStudents, timeSlots, teacherBusySlots, parentAvailabilityDict, slotDuration, false, true);
+                }
+
+                // ניסיון 3: שיבוץ ללא אילוצים (מופעל אם ההורה לא קיים או אם הניסיונות הקודמים נכשלו)
                 if (finalSlots == null)
-                    finalSlots = FindBestSlotsForFamily(parentId, parentStudents, timeSlots, teacherBusySlots, parentAvailabilityDict, slotDuration, false, false);
+                    finalSlots = FindBestSlotsForFamily(parentIdentity, parentStudents, timeSlots, teacherBusySlots, parentAvailabilityDict, slotDuration, false, false);
 
                 // ביצוע השיבוץ בפועל
                 if (finalSlots != null)
                 {
                     for (int i = 0; i < parentStudents.Count; i++)
                     {
-                        var slot = finalSlots[i];
                         var student = parentStudents[i];
+                        var slot = finalSlots[i];
 
                         allMeetingsDto.Add(CreateDto(school, student, slot));
                         teacherBusySlots[student.TeacherId.Value].Add(slot);
@@ -93,17 +107,15 @@ namespace Service.Scheduling
                 }
             }
 
-            // 4. שמירה במסד נתונים
             await SaveToDatabaseAsync(schoolId, allMeetingsDto);
             return allMeetingsDto;
         }
 
-        private List<TimeSpan> FindBestSlotsForFamily(int parentId, List<Student> students, List<TimeSpan> allSlots, Dictionary<int, HashSet<TimeSpan>> teacherBusy, Dictionary<int, List<ParentAvailability>> availDict, int duration, bool usePositive, bool useNegative)
+        private List<TimeSpan> FindBestSlotsForFamily(string parentIdentity, List<Student> students, List<TimeSpan> allSlots, Dictionary<int, HashSet<TimeSpan>> teacherBusy, Dictionary<string, List<ParentAvailability>> availDict, int duration, bool usePositive, bool useNegative)
         {
             List<TimeSpan> bestMatch = null;
             double minGap = double.MaxValue;
 
-            // סורקים כל נקודת התחלה אפשרית כדי למצוא את הרצף הכי צפוף (מינימום חורים)
             foreach (var startTime in allSlots)
             {
                 var trialSlots = new List<TimeSpan>();
@@ -115,7 +127,7 @@ namespace Service.Scheduling
                         .Where(s => s >= startTime)
                         .Where(s => !teacherBusy[student.TeacherId.Value].Contains(s))
                         .Where(s => !trialSlots.Contains(s))
-                        .Where(s => IsSlotAllowed(parentId, s, availDict, duration, usePositive, useNegative))
+                        .Where(s => IsSlotAllowed(parentIdentity, s, availDict, duration, usePositive, useNegative))
                         .OrderBy(s => s)
                         .FirstOrDefault();
 
@@ -131,21 +143,20 @@ namespace Service.Scheduling
                         minGap = currentGap;
                         bestMatch = new List<TimeSpan>(trialSlots);
                     }
-                    // אם מצאנו רצף מושלם ללא חורים, נצא מהלופ
                     if (currentGap == (students.Count - 1) * duration) break;
                 }
             }
             return bestMatch;
         }
 
-        private bool IsSlotAllowed(int parentId, TimeSpan slot, Dictionary<int, List<ParentAvailability>> dict, int duration, bool usePositive, bool useNegative)
+        private bool IsSlotAllowed(string parentIdentity, TimeSpan slot, Dictionary<string, List<ParentAvailability>> dict, int duration, bool usePositive, bool useNegative)
         {
-            if (!dict.ContainsKey(parentId)) return true;
+            // אם אין אילוצים מתועדים לת"ז הזו, הכל מותר
+            if (string.IsNullOrEmpty(parentIdentity) || !dict.ContainsKey(parentIdentity)) return true;
 
-            var constraints = dict[parentId];
+            var constraints = dict[parentIdentity];
             var endOfSlot = slot.Add(TimeSpan.FromMinutes(duration));
 
-            // בדיקת אילוצים שליליים (False) - "אני לא יכול בשעות האלו"
             if (useNegative)
             {
                 bool isBlocked = constraints.Any(c => !c.IsAvailable &&
@@ -153,7 +164,6 @@ namespace Service.Scheduling
                 if (isBlocked) return false;
             }
 
-            // בדיקת אילוצים חיוביים (True) - "אני יכול רק בשעות האלו"
             if (usePositive)
             {
                 var positiveConstraints = constraints.Where(c => c.IsAvailable).ToList();
@@ -170,13 +180,9 @@ namespace Service.Scheduling
         private List<TimeSpan> GenerateTimeSlots(School school)
         {
             var slots = new List<TimeSpan>();
-            if (school.SlotDurationMinutes <= 0) return slots;
-
-            var slotDuration = TimeSpan.FromMinutes(school.SlotDurationMinutes);
-            for (var t = school.MeetingStartTime; t + slotDuration <= school.MeetingEndTime; t += slotDuration)
-            {
+            var duration = TimeSpan.FromMinutes(school.SlotDurationMinutes);
+            for (var t = school.MeetingStartTime; t + duration <= school.MeetingEndTime; t += duration)
                 slots.Add(t);
-            }
             return slots;
         }
 
@@ -190,19 +196,14 @@ namespace Service.Scheduling
                 ClassName = student.ClassName,
                 MeetingDate = school.MeetingDate,
                 StartTime = slot,
-                EndTime = slot.Add(TimeSpan.FromMinutes(school.SlotDurationMinutes)),
-                IsPast = false
+                EndTime = slot.Add(TimeSpan.FromMinutes(school.SlotDurationMinutes))
             };
         }
 
         private async Task SaveToDatabaseAsync(int schoolId, List<ParentMeetingDto> dtos)
         {
-            var existing = await _context.ParentMeetings
-                .Where(m => m.SchoolId == schoolId)
-                .ToListAsync();
-
+            var existing = await _context.ParentMeetings.Where(m => m.SchoolId == schoolId).ToListAsync();
             _context.ParentMeetings.RemoveRange(existing);
-
             var entities = dtos.Select(d => new ParentMeeting
             {
                 SchoolId = d.SchoolId,
@@ -211,8 +212,7 @@ namespace Service.Scheduling
                 ClassName = d.ClassName,
                 MeetingDate = d.MeetingDate,
                 StartTime = d.StartTime,
-                EndTime = d.EndTime,
-                IsPast = false
+                EndTime = d.EndTime
             }).ToList();
             await _context.ParentMeetings.AddRangeAsync(entities);
             await _context.SaveChangesAsync();

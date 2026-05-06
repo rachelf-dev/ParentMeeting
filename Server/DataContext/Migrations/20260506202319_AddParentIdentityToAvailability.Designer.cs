@@ -12,8 +12,8 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace DataContext.Migrations
 {
     [DbContext(typeof(SchoolParentMeetingSystemContext))]
-    [Migration("20260506191833_MakeParentIdOptional")]
-    partial class MakeParentIdOptional
+    [Migration("20260506202319_AddParentIdentityToAvailability")]
+    partial class AddParentIdentityToAvailability
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -82,8 +82,12 @@ namespace DataContext.Migrations
                     b.Property<DateTime>("MeetingDate")
                         .HasColumnType("datetime2");
 
-                    b.Property<int>("ParentId")
+                    b.Property<int?>("ParentId")
                         .HasColumnType("int");
+
+                    b.Property<string>("ParentIdentity")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<int>("SchoolId")
                         .HasColumnType("int");
@@ -284,7 +288,7 @@ namespace DataContext.Migrations
                     b.HasOne("Repository.Entities.Parent", "Parent")
                         .WithMany("ParentAvailability")
                         .HasForeignKey("ParentId")
-                        .OnDelete(DeleteBehavior.SetNull);
+                        .OnDelete(DeleteBehavior.Cascade);
 
                     b.Navigation("Parent");
                 });

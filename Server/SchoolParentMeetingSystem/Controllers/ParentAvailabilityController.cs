@@ -31,33 +31,30 @@ namespace SchoolParentMeetingSystem.Controllers
 
         [Authorize(Roles = "Admin,School")]
         [HttpPost]
-        public async Task<IActionResult> AddItem([FromBody] ParentAvailabilityDto parentAvailabilityDto)
+        public async Task<IActionResult> AddItem([FromBody] ParentAvailabilityDto dto)
         {
             try
             {
-                if (!ModelState.IsValid) return BadRequest(ModelState);
-
-                // 1. קבלת מזהה בית הספר מהטוקן
                 int currentSchoolId = GetCurrentSchoolId();
-                if (currentSchoolId == 0) return Unauthorized("לא נמצא מזהה בית ספר בטוקן.");
+                dto.SchoolId = currentSchoolId;
 
-                parentAvailabilityDto.SchoolId = currentSchoolId;
+                // חיפוש זריז: אם ההורה קיים, נשמור את ה-ID שלו ליתר ביטחון
+                var allParents = await _parentService.GetBySchoolId(currentSchoolId);
+                var parent = allParents.FirstOrDefault(p => p.ParentIdentity == dto.ParentIdentity);
 
-                // 2. ויתור על חיפוש ההורה/יצירתו
-                // אנחנו פשוט שומרים את ה-ParentId כפי שהגיע מה-Frontend (שהוא הת"ז)
-                // שים לב: זה יעבוד רק אם השדה ParentId במסד הנתונים הוא מסוג שיכול להכיל ת"ז 
-                // ואם אין עליו Constraint של מפתח זר שמחייב קיום בטבלת Parents.
+                if (parent != null)
+                {
+                    dto.ParentId = parent.Id;
+                }
+                else
+                {
+                    dto.ParentId = null; // אין הורה? לא נורא, יש לנו את ה-ParentIdentity
+                }
 
-                // 3. שמירת האילוץ ישירות
-                var result = await _service.AddItem(parentAvailabilityDto);
-
+                var result = await _service.AddItem(dto);
                 return Ok(result);
             }
-            catch (Exception ex)
-            {
-                // אם מופיעה כאן שגיאת SQL על Foreign Key, סימן שצריך לבטל את הקישור במסד הנתונים
-                return BadRequest("שגיאה בשמירה: וודא שהמערכת מאפשרת הזנת תעודת זהות ללא שיוך להורה קיים. " + (ex.InnerException?.Message ?? ex.Message));
-            }
+            catch (Exception ex) { return BadRequest(ex.Message); }
         }
 
         [Authorize(Roles = "Admin,School")]
