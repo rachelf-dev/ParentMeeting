@@ -27,16 +27,16 @@ namespace Service.Importing
             var worksheet = package.Workbook.Worksheets[0];
             int rowCount = worksheet.Dimension.Rows;
 
-            // --- 1. ניקוי נתונים קיימים (מחיקת הכל כדי להתחיל דף חדש) ---
+            // --- 1. ניקוי נתונים קיימים (לפי בית ספר בלבד) ---
+
             // מחיקת פגישות קיימות
             var meetingsToRemove = _context.ParentMeetings.Where(m => m.SchoolId == schoolId);
             _context.ParentMeetings.RemoveRange(meetingsToRemove);
 
-            //// מחיקת אילוצי הורים (Availability)
-            //var constraintsToRemove = _context.ParentAvailability.Where(pa => pa.Parent.SchoolId == schoolId);
-            //_context.ParentAvailability.RemoveRange(constraintsToRemove);
+            // שימי לב: אנחנו לא נוגעים ב-ParentAvailability! 
+            // בזכות הניתוק שביצענו ב-DB (ה-Migration), מחיקת ההורים לא תשפיע עליהם.
 
-            // מוחקים קודם תלמידים (כי הם תלויים בהורים ומורים)
+            // מוחקים תלמידים
             var studentsToRemove = _context.Students.Where(s => s.SchoolId == schoolId);
             _context.Students.RemoveRange(studentsToRemove);
 
@@ -44,11 +44,11 @@ namespace Service.Importing
             var teachersToRemove = _context.Teachers.Where(t => t.SchoolId == schoolId);
             _context.Teachers.RemoveRange(teachersToRemove);
 
-            // מוחקים הורים (כדי למנוע שגיאת Email/Identity כפול)
+            // מוחקים הורים 
             var parentsToRemove = _context.Parents.Where(p => p.SchoolId == schoolId);
             _context.Parents.RemoveRange(parentsToRemove);
 
-            // שמירה זמנית של המחיקה
+            // שמירה של שלב המחיקה
             await _context.SaveChangesAsync();
 
             // --- 2. הכנה לייבוא החדש ---
@@ -66,11 +66,11 @@ namespace Service.Importing
                 var parentName = worksheet.Cells[row, 7].Text.Trim();
                 var parentEmail = worksheet.Cells[row, 8].Text.Trim();
 
-                // דילוג על שורות ריקות בטעות
-                if (string.IsNullOrEmpty(studentIdentity) || string.IsNullOrEmpty(parentEmail))
+                // תיקון: בדיקה שגם parentIdentity קיים
+                if (string.IsNullOrEmpty(studentIdentity) || string.IsNullOrEmpty(parentIdentity))
                     continue;
 
-                // --- טיפול בהורה (מניעת כפילות באותו קובץ) ---
+                // --- טיפול בהורה ---
                 if (!parentsDict.TryGetValue(parentIdentity, out var parent))
                 {
                     parent = new Parent
@@ -85,7 +85,7 @@ namespace Service.Importing
                     parentsDict[parentIdentity] = parent;
                 }
 
-                // --- טיפול במורה (לפי כיתה) ---
+                // --- טיפול במורה ---
                 if (!teachersDict.TryGetValue(className, out var teacher))
                 {
                     teacher = new Teacher
@@ -106,8 +106,8 @@ namespace Service.Importing
                     FirstName = firstName,
                     LastName = lastName,
                     ClassName = className,
-                    Parent = parent, 
-                    Teacher = teacher,  
+                    Parent = parent,
+                    Teacher = teacher,
                     SchoolId = schoolId
                 };
 

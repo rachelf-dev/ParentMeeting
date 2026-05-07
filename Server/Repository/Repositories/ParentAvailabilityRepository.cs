@@ -54,7 +54,7 @@ namespace Repository.Repositories
                 return null;
 
             existingAvailability.SchoolId = item.SchoolId;
-            existingAvailability.ParentId = item.ParentId;
+            existingAvailability.ParentIdentity = item.ParentIdentity;
             existingAvailability.MeetingDate = item.MeetingDate;
             existingAvailability.StartTime = item.StartTime;
             existingAvailability.EndTime = item.EndTime;

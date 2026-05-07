@@ -117,10 +117,6 @@ namespace DataContext
                       .HasForeignKey(m => m.ParentId)
                       .OnDelete(DeleteBehavior.Restrict);
 
-                entity.HasMany(e => e.ParentAvailability)
-                      .WithOne(a => a.Parent)
-                      .HasForeignKey(a => a.ParentId)
-                      .OnDelete(DeleteBehavior.Cascade);
             });
 
             // Teacher
@@ -197,6 +193,10 @@ namespace DataContext
                 entity.Property(e => e.SchoolId)
                       .IsRequired();
 
+                entity.Property(e => e.ParentIdentity)
+                      .HasMaxLength(12)
+                      .IsRequired();
+
                 entity.Property(e => e.MeetingDate)
                       .IsRequired();
 
@@ -208,11 +208,6 @@ namespace DataContext
 
                 entity.Property(e => e.IsAvailable)
                       .IsRequired();
-
-                entity.HasOne(e => e.Parent)
-                      .WithMany(p => p.ParentAvailability)
-                      .HasForeignKey(e => e.ParentId)
-                      .IsRequired(false); // זה השינוי היחיד שבאמת חייב ב-DB
             });
 
             // ParentMeeting
