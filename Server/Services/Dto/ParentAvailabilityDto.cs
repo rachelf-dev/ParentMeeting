@@ -10,6 +10,7 @@ namespace Service.Dto
 {
     public class ParentAvailabilityDto
     {
+        public int Id { get; set; } 
         public int? ParentId { get; set; }
         public string ParentIdentity { get; set; }
 
