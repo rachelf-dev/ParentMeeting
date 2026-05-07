@@ -1,10 +1,5 @@
-﻿using System;
-using System.Collections.Generic;
-using System.ComponentModel.DataAnnotations;
+﻿using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace Repository.Entities
 {
@@ -23,15 +18,21 @@ namespace Repository.Entities
         public int ParentId { get; set; }
         public Parent Parent { get; set; }
 
+        // שדה חדש לשמירת המורה שמשובץ לפגישה
+        public int? TeacherId { get; set; }
+
         [Required]
         public string ClassName { get; set; } = string.Empty;
+
         [Required]
         public int SchoolId { get; set; }
 
         [Required]
         public DateTime MeetingDate { get; set; }
+
         [Required]
         public TimeSpan StartTime { get; set; }
+
         [Required]
         public TimeSpan EndTime { get; set; }
 

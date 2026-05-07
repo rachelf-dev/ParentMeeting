@@ -22,158 +22,138 @@ namespace Service.Scheduling
 
         public async Task<List<ParentMeetingDto>> ProcessSchedulingAsync(int schoolId)
         {
-            // 1. שליפת נתונים בסיסיים
-            var school = await _context.Schools
-                .AsNoTracking()
-                .FirstOrDefaultAsync(s => s.Id == schoolId);
+            var school = await _context.Schools.AsNoTracking().FirstOrDefaultAsync(s => s.Id == schoolId);
+            if (school == null) return new List<ParentMeetingDto>();
 
-            if (school == null) throw new Exception("בית הספר לא נמצא.");
+            // טעינת נתונים
+            var students = await _context.Students.AsNoTracking().Where(s => s.SchoolId == schoolId).ToListAsync();
+            var parents = await _context.Parents.AsNoTracking().Where(p => p.SchoolId == schoolId).ToListAsync();
+            var parentConstraints = await _context.ParentAvailability.AsNoTracking().Where(pa => pa.SchoolId == schoolId).ToListAsync();
+            var teachers = await _context.Teachers.AsNoTracking().Where(t => t.SchoolId == schoolId).ToListAsync();
 
-            var students = await _context.Students
-                .AsNoTracking()
-                .Where(s => s.SchoolId == schoolId)
-                .ToListAsync();
+            // מילונים לשליפה מהירה
+            var classTeacherIdMap = teachers.ToDictionary(t => t.ClassName, t => t.Id);
+            var classTeacherNameMap = teachers.ToDictionary(t => t.ClassName, t => t.FullName);
+            var parentIdentityMap = parents.ToDictionary(p => p.Id, p => p.ParentIdentity);
 
-            var teachers = await _context.Teachers
-                .AsNoTracking()
-                .Where(t => t.SchoolId == schoolId)
-                .ToListAsync();
-
-            // שליפת כל ההורים הקיימים בבית הספר לצורך בדיקת קיום
-            var existingParentIdentities = await _context.Parents
-                .Where(p => p.SchoolId == schoolId)
-                .Select(p => p.ParentIdentity)
-                .AsNoTracking()
-                .ToListAsync();
-
-            var parentConstraints = await _context.ParentAvailability
-                .AsNoTracking()
-                .Where(pa => pa.SchoolId == schoolId)
-                .ToListAsync();
-
-            // 2. הכנת תשתיות - קיבוץ לפי תעודת זהות (string)
             var timeSlots = GenerateTimeSlots(school);
-            var slotDuration = school.SlotDurationMinutes;
-            var teacherBusySlots = teachers.ToDictionary(t => t.Id, t => new HashSet<TimeSpan>());
+
+            // ניהול תפוסה לפי שם כיתה (מבטיח מורה אחד בחדר בכל זמן נתון)
+            var classNames = students.Select(s => s.ClassName).Distinct().ToList();
+            var classBusySlots = classNames.ToDictionary(name => name, name => new HashSet<TimeSpan>());
 
             var parentAvailabilityDict = parentConstraints
+                .Where(pc => !string.IsNullOrEmpty(pc.ParentIdentity))
                 .GroupBy(pc => pc.ParentIdentity)
                 .ToDictionary(g => g.Key, g => g.ToList());
 
-            var allMeetingsDto = new List<ParentMeetingDto>();
+            var allMeetings = new List<ParentMeetingDto>();
 
-            // מיון קבוצות לפי הורה
+            // קיבוץ לפי הורים (שיבוץ משפחות ברצף)
             var parentGroups = students
-                .Where(s => s.TeacherId != null)
-                .GroupBy(s => s.ParentId.ToString()) // קיבוץ לפי ה-Identity שנמצא ב-Student
+                .Where(s => {
+                    int pId = Convert.ToInt32(s.ParentId);
+                    return pId != 0 && parentIdentityMap.ContainsKey(pId);
+                })
+                .GroupBy(s => parentIdentityMap[Convert.ToInt32(s.ParentId)])
                 .OrderByDescending(g => g.Count())
                 .ToList();
 
-            // 3. אלגוריתם שיבוץ
             foreach (var group in parentGroups)
             {
                 var parentIdentity = group.Key;
-                var parentStudents = group.ToList();
-                List<TimeSpan> finalSlots = null;
+                var family = group.ToList();
+                List<TimeSpan> selectedSlots = null;
 
-                // בדיקה: האם ההורה בכלל קיים במערכת?
-                bool parentExists = existingParentIdentities.Contains(parentIdentity);
+                // אלגוריתם שיבוץ אופטימלי (ניסיון קשוח -> ניסיון גמיש -> התעלמות מאילוצים)
+                selectedSlots = FindOptimalSlots(parentIdentity, family, timeSlots, classBusySlots, parentAvailabilityDict, school.SlotDurationMinutes, 30, true);
+                if (selectedSlots == null)
+                    selectedSlots = FindOptimalSlots(parentIdentity, family, timeSlots, classBusySlots, parentAvailabilityDict, school.SlotDurationMinutes, 30, false);
+                if (selectedSlots == null)
+                    selectedSlots = FindOptimalSlots(parentIdentity, family, timeSlots, classBusySlots, parentAvailabilityDict, school.SlotDurationMinutes, 999, false, true);
 
-                if (parentExists)
+                if (selectedSlots != null)
                 {
-                    // ניסיון 1: שיבוץ עם כל האילוצים
-                    finalSlots = FindBestSlotsForFamily(parentIdentity, parentStudents, timeSlots, teacherBusySlots, parentAvailabilityDict, slotDuration, true, true);
-
-                    // ניסיון 2: ויתור על שעות מועדפות (Positive)
-                    if (finalSlots == null)
-                        finalSlots = FindBestSlotsForFamily(parentIdentity, parentStudents, timeSlots, teacherBusySlots, parentAvailabilityDict, slotDuration, false, true);
-                }
-
-                // ניסיון 3: שיבוץ ללא אילוצים (מופעל אם ההורה לא קיים או אם הניסיונות הקודמים נכשלו)
-                if (finalSlots == null)
-                    finalSlots = FindBestSlotsForFamily(parentIdentity, parentStudents, timeSlots, teacherBusySlots, parentAvailabilityDict, slotDuration, false, false);
-
-                // ביצוע השיבוץ בפועל
-                if (finalSlots != null)
-                {
-                    for (int i = 0; i < parentStudents.Count; i++)
+                    for (int i = 0; i < family.Count; i++)
                     {
-                        var student = parentStudents[i];
-                        var slot = finalSlots[i];
+                        var student = family[i];
+                        var slot = selectedSlots[i];
 
-                        allMeetingsDto.Add(CreateDto(school, student, slot));
-                        teacherBusySlots[student.TeacherId.Value].Add(slot);
+                        // סימון הכיתה כתפוסה
+                        classBusySlots[student.ClassName].Add(slot);
+
+                        // שליפת פרטי המורה
+                        classTeacherIdMap.TryGetValue(student.ClassName, out int tId);
+                        classTeacherNameMap.TryGetValue(student.ClassName, out string tName);
+
+                        allMeetings.Add(new ParentMeetingDto
+                        {
+                            SchoolId = school.Id,
+                            StudentId = student.Id,
+                            ParentId = Convert.ToInt32(student.ParentId),
+                            TeacherId = tId,
+                            TeacherName = tName ?? "לא הוגדר מורה",
+                            ClassName = student.ClassName,
+                            MeetingDate = school.MeetingDate,
+                            StartTime = slot,
+                            EndTime = slot.Add(TimeSpan.FromMinutes(school.SlotDurationMinutes))
+                        });
                     }
                 }
             }
 
-            await SaveToDatabaseAsync(schoolId, allMeetingsDto);
-            return allMeetingsDto;
+            await SaveToDatabaseAsync(schoolId, allMeetings);
+            return allMeetings;
         }
 
-        private List<TimeSpan> FindBestSlotsForFamily(string parentIdentity, List<Student> students, List<TimeSpan> allSlots, Dictionary<int, HashSet<TimeSpan>> teacherBusy, Dictionary<string, List<ParentAvailability>> availDict, int duration, bool usePositive, bool useNegative)
+        private List<TimeSpan> FindOptimalSlots(string parentIdentity, List<Student> students, List<TimeSpan> allSlots, Dictionary<string, HashSet<TimeSpan>> classBusy, Dictionary<string, List<ParentAvailability>> availDict, int duration, double maxGap, bool strictConstraints, bool ignoreConstraintsEntirely = false)
         {
-            List<TimeSpan> bestMatch = null;
-            double minGap = double.MaxValue;
+            var bestOptions = new List<(List<TimeSpan> Slots, double Gap)>();
 
-            foreach (var startTime in allSlots)
+            foreach (var startAnchor in allSlots)
             {
                 var trialSlots = new List<TimeSpan>();
-                bool canFitAll = true;
+                bool canFit = true;
 
                 foreach (var student in students)
                 {
                     var slot = allSlots
-                        .Where(s => s >= startTime)
-                        .Where(s => !teacherBusy[student.TeacherId.Value].Contains(s))
-                        .Where(s => !trialSlots.Contains(s))
-                        .Where(s => IsSlotAllowed(parentIdentity, s, availDict, duration, usePositive, useNegative))
+                        .Where(s => s >= startAnchor)
+                        .Where(s => !classBusy[student.ClassName].Contains(s))
+                        .Where(s => !trialSlots.Contains(s)) // מונע מהורה להיות ב-2 מקומות בו-זמנית
+                        .Where(s => ignoreConstraintsEntirely || IsSlotAllowed(parentIdentity, s, availDict, duration, strictConstraints, true))
                         .OrderBy(s => s)
                         .FirstOrDefault();
 
-                    if (slot == default) { canFitAll = false; break; }
+                    if (slot == TimeSpan.Zero && !allSlots.Contains(TimeSpan.Zero)) { canFit = false; break; }
                     trialSlots.Add(slot);
                 }
 
-                if (canFitAll)
+                if (canFit && trialSlots.Count == students.Count)
                 {
-                    var currentGap = (trialSlots.Max() - trialSlots.Min()).TotalMinutes;
-                    if (currentGap < minGap)
-                    {
-                        minGap = currentGap;
-                        bestMatch = new List<TimeSpan>(trialSlots);
-                    }
-                    if (currentGap == (students.Count - 1) * duration) break;
+                    double currentGap = (trialSlots.Max() - trialSlots.Min()).TotalMinutes;
+                    if (currentGap <= maxGap)
+                        bestOptions.Add((new List<TimeSpan>(trialSlots), currentGap));
                 }
             }
-            return bestMatch;
+            return bestOptions.OrderBy(o => o.Gap).ThenBy(o => o.Slots.Min()).Select(o => o.Slots).FirstOrDefault();
         }
 
         private bool IsSlotAllowed(string parentIdentity, TimeSpan slot, Dictionary<string, List<ParentAvailability>> dict, int duration, bool usePositive, bool useNegative)
         {
-            // אם אין אילוצים מתועדים לת"ז הזו, הכל מותר
             if (string.IsNullOrEmpty(parentIdentity) || !dict.ContainsKey(parentIdentity)) return true;
-
             var constraints = dict[parentIdentity];
-            var endOfSlot = slot.Add(TimeSpan.FromMinutes(duration));
+            var end = slot.Add(TimeSpan.FromMinutes(duration));
 
-            if (useNegative)
-            {
-                bool isBlocked = constraints.Any(c => !c.IsAvailable &&
-                    ((slot >= c.StartTime && slot < c.EndTime) || (endOfSlot > c.StartTime && endOfSlot <= c.EndTime)));
-                if (isBlocked) return false;
-            }
+            if (useNegative && constraints.Any(c => !c.IsAvailable && ((slot >= c.StartTime && slot < c.EndTime) || (end > c.StartTime && end <= c.EndTime))))
+                return false;
 
             if (usePositive)
             {
-                var positiveConstraints = constraints.Where(c => c.IsAvailable).ToList();
-                if (positiveConstraints.Any())
-                {
-                    bool isInAllowedRange = positiveConstraints.Any(c => slot >= c.StartTime && endOfSlot <= c.EndTime);
-                    if (!isInAllowedRange) return false;
-                }
+                var pos = constraints.Where(c => c.IsAvailable).ToList();
+                if (pos.Any() && !pos.Any(c => slot >= c.StartTime && end <= c.EndTime))
+                    return false;
             }
-
             return true;
         }
 
@@ -186,35 +166,23 @@ namespace Service.Scheduling
             return slots;
         }
 
-        private ParentMeetingDto CreateDto(School school, Student student, TimeSpan slot)
-        {
-            return new ParentMeetingDto
-            {
-                SchoolId = school.Id,
-                StudentId = student.Id,
-                ParentId = student.ParentId,
-                ClassName = student.ClassName,
-                MeetingDate = school.MeetingDate,
-                StartTime = slot,
-                EndTime = slot.Add(TimeSpan.FromMinutes(school.SlotDurationMinutes))
-            };
-        }
-
         private async Task SaveToDatabaseAsync(int schoolId, List<ParentMeetingDto> dtos)
         {
             var existing = await _context.ParentMeetings.Where(m => m.SchoolId == schoolId).ToListAsync();
             _context.ParentMeetings.RemoveRange(existing);
-            var entities = dtos.Select(d => new ParentMeeting
+
+            _context.ParentMeetings.AddRange(dtos.Select(d => new ParentMeeting
             {
                 SchoolId = d.SchoolId,
                 StudentId = d.StudentId,
                 ParentId = d.ParentId,
+                TeacherId = d.TeacherId, // השמירה ל-SQL מתבצעת כאן
                 ClassName = d.ClassName,
                 MeetingDate = d.MeetingDate,
                 StartTime = d.StartTime,
-                EndTime = d.EndTime
-            }).ToList();
-            await _context.ParentMeetings.AddRangeAsync(entities);
+                EndTime = d.EndTime,
+                IsPast = d.IsPast
+            }));
             await _context.SaveChangesAsync();
         }
     }
