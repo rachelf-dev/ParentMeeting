@@ -36,9 +36,17 @@ namespace Repository.Repositories
             await ctx.Save();
         }
 
+        //public async Task<List<ParentMeeting>> GetAll()
+        //{
+        //    return await ctx.ParentMeetings.ToListAsync();
+        //}
         public async Task<List<ParentMeeting>> GetAll()
         {
-            return await ctx.ParentMeetings.ToListAsync();
+            return await ctx.ParentMeetings
+                .Include(m => m.Student)
+                .Include(m => m.Parent)
+                .Include(m => m.Teacher)
+                .ToListAsync();
         }
 
         public async Task<ParentMeeting> GetById(int id)

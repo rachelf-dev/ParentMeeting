@@ -6,10 +6,11 @@ namespace Service.Dto
     {
         [Required]
         public int StudentId { get; set; }
+        public string StudentName { get; set; } 
 
         [Required]
         public int ParentId { get; set; }
-
+        public string ParentName { get; set; }
         // שדות חדשים שהוספנו
         public int TeacherId { get; set; }
         public string TeacherName { get; set; }

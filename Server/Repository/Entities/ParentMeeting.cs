@@ -18,8 +18,10 @@ namespace Repository.Entities
         public int ParentId { get; set; }
         public Parent Parent { get; set; }
 
-        // שדה חדש לשמירת המורה שמשובץ לפגישה
-        public int? TeacherId { get; set; }
+        [ForeignKey("TeacherId")]
+        public int TeacherId { get; set; }
+        
+        public virtual Teacher Teacher { get; set; }
 
         [Required]
         public string ClassName { get; set; } = string.Empty;

@@ -143,7 +143,8 @@ namespace DataContext
                       .OnDelete(DeleteBehavior.Restrict);
 
                 entity.HasMany(e => e.ParentMeetings)
-                      .WithOne()
+                      .WithOne(m => m.Teacher) 
+                      .HasForeignKey(m => m.TeacherId) 
                       .OnDelete(DeleteBehavior.Restrict);
             });
 
@@ -242,6 +243,11 @@ namespace DataContext
                 entity.HasOne(e => e.Parent)
                       .WithMany(p => p.ParentMeetings)
                       .HasForeignKey(e => e.ParentId)
+                      .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(e => e.Teacher)
+                      .WithMany(t => t.ParentMeetings)
+                      .HasForeignKey(e => e.TeacherId)
                       .OnDelete(DeleteBehavior.Restrict);
             });
 
